@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String         @id @default(uuid())
+  name       String
+  email      String         @unique
+  password   String
+  leads      Lead[]
+  followUps  FollowUp[]
+  activities LeadActivity[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@map("users")
+}
+
+model Lead {
+  id             String    @id @default(uuid())
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  source         String?
+  stage          LeadStage @default(NEW)
+  followUpAt     DateTime?
+  nextFollowUpAt DateTime?
+  notes          String?
+  lastFollowUpAt DateTime?
+  lastActivityAt DateTime?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  followUps  FollowUp[]
+  activities LeadActivity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([userId, stage, createdAt])
+  @@index([stage])
+  @@index([followUpAt])
+  @@index([lastActivityAt])
+  @@map("leads")
+}
+
+model FollowUp {
+  id                            String         @id @default(uuid())
+  leadId                        String
+  lead                          Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId                        String
+  user                          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sequenceNumber                Int
+  status                        FollowUpStatus @default(SCHEDULED)
+  scheduledAt                   DateTime
+  completedAt                   DateTime?
+  communicationMedium           String?
+  communicationMediumNormalized String?
+  discussionNote                String?
+  outcome                       String?
+  nextFollowUpAt                DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId, createdAt])
+  @@index([leadId, sequenceNumber])
+  @@index([leadId, scheduledAt])
+  @@map("follow_ups")
+}
+
+model LeadActivity {
+  id          String       @id @default(uuid())
+  leadId      String
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        ActivityType
+  description String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId, createdAt])
+  @@map("lead_activities")
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  WON
+  LOST
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  MISSED
+}
+
+enum ActivityType {
+  LEAD_CREATED
+  LEAD_UPDATED
+  STAGE_CHANGED
+  FOLLOWUP_SCHEDULED
+  FOLLOWUP_COMPLETED
+  FOLLOWUP_RESCHEDULED
+  FOLLOWUP_CANCELLED
+}
