@@ -25,12 +25,10 @@ export class LeadService {
       userId,
     };
 
-    // Stage filter
     if (stage) {
       where.stage = stage;
     }
 
-    // Search filter (name, email, phone, company)
     if (search && search.trim() !== '') {
       const term = search.trim();
       where.OR = [
@@ -41,7 +39,6 @@ export class LeadService {
       ];
     }
 
-    // Follow-up filter (today, overdue, upcoming)
     if (followUp) {
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
@@ -66,7 +63,6 @@ export class LeadService {
       }
     }
 
-    // Sort mapping
     const validSortFields = ['createdAt', 'name', 'company', 'stage', 'nextFollowUpAt', 'lastActivityAt', 'followUpAt'];
     const actualSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
 
@@ -128,8 +124,6 @@ export class LeadService {
       throw new AppError('Lead not found or access denied', 404);
     }
 
-    console.log('[LeadService] getLeadById →', JSON.stringify(lead, null, 2));
-
     return lead;
   }
 
@@ -154,7 +148,6 @@ export class LeadService {
         },
       });
 
-      // Log lead_created activity
       await tx.leadActivity.create({
         data: {
           leadId: lead.id,
@@ -165,7 +158,6 @@ export class LeadService {
         },
       });
 
-      // If followUpAt is specified, automatically create Follow-Up #1 in SCHEDULED state
       if (scheduledDate) {
         await tx.followUp.create({
           data: {
@@ -291,7 +283,6 @@ export class LeadService {
     return { message: 'Lead deleted successfully' };
   }
 
-  // Follow-ups API
   static async getFollowUps(userId: string, leadId: string, query: GetFollowUpsQuery) {
     await this.getLeadById(userId, leadId);
 
@@ -340,7 +331,6 @@ export class LeadService {
     const now = new Date();
 
     return await prisma.$transaction(async (tx) => {
-      // Find highest sequence number for this lead
       const maxSeq = await tx.followUp.aggregate({
         where: { leadId },
         _max: { sequenceNumber: true },
@@ -359,7 +349,6 @@ export class LeadService {
         },
       });
 
-      // Update lead
       await tx.lead.update({
         where: { id: leadId },
         data: {
@@ -369,7 +358,6 @@ export class LeadService {
         },
       });
 
-      // Log activity
       await tx.leadActivity.create({
         data: {
           leadId,
@@ -437,7 +425,6 @@ export class LeadService {
         });
       }
 
-      // 1. Update existing follow-up
       const completedFollowUp = await tx.followUp.update({
         where: { id: targetFollowUp.id },
         data: {
@@ -451,7 +438,6 @@ export class LeadService {
         },
       });
 
-      // 2. Log followup_completed activity
       await tx.leadActivity.create({
         data: {
           leadId,
@@ -469,7 +455,6 @@ export class LeadService {
         },
       });
 
-      // 3. Stage update if requested
       if (data.stage && data.stage !== lead.stage) {
         await tx.lead.update({
           where: { id: leadId },
@@ -491,7 +476,6 @@ export class LeadService {
         });
       }
 
-      // 4. Create next scheduled follow-up if requested
       if (nextScheduledDate) {
         const maxSeq = await tx.followUp.aggregate({
           where: { leadId },
@@ -510,7 +494,6 @@ export class LeadService {
           },
         });
 
-        // Update lead state
         await tx.lead.update({
           where: { id: leadId },
           data: {
@@ -536,7 +519,6 @@ export class LeadService {
           },
         });
       } else {
-        // Clear active followUpAt on lead if no next follow-up is set
         await tx.lead.update({
           where: { id: leadId },
           data: {
@@ -608,7 +590,6 @@ export class LeadService {
     });
   }
 
-  // Activities API
   static async getActivities(userId: string, leadId: string, query: GetActivitiesQuery) {
     await this.getLeadById(userId, leadId);
 

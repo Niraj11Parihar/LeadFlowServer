@@ -44,7 +44,6 @@ export class LeadController {
     });
   };
 
-  // Follow-ups controllers
   static getFollowUps = async (req: AuthRequest, res: Response) => {
     const result = await LeadService.getFollowUps(req.user!.userId, req.params.id, req.query as any);
     res.status(200).json({
@@ -88,7 +87,6 @@ export class LeadController {
     });
   };
 
-  // Activities controller
   static getActivities = async (req: AuthRequest, res: Response) => {
     const result = await LeadService.getActivities(req.user!.userId, req.params.id, req.query as any);
     res.status(200).json({
