@@ -8,9 +8,7 @@ class DashboardService {
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        // Total leads count
         const total = await prisma_1.prisma.lead.count({ where: { userId } });
-        // Breakdown by stage
         const stageCounts = await prisma_1.prisma.lead.groupBy({
             by: ['stage'],
             where: { userId },
@@ -35,7 +33,6 @@ class DashboardService {
             if (sc.stage === client_1.LeadStage.LOST)
                 stages.lost = sc._count.stage;
         });
-        // Today's follow-ups count
         const todayCount = await prisma_1.prisma.lead.count({
             where: {
                 userId,
@@ -45,7 +42,6 @@ class DashboardService {
                 },
             },
         });
-        // Overdue follow-ups count (excluding WON and LOST)
         const overdueCount = await prisma_1.prisma.lead.count({
             where: {
                 userId,
@@ -57,7 +53,6 @@ class DashboardService {
                 },
             },
         });
-        // Today's follow-ups records
         const todayFollowUps = await prisma_1.prisma.lead.findMany({
             where: {
                 userId,
@@ -78,7 +73,6 @@ class DashboardService {
             orderBy: { followUpAt: 'asc' },
             take: 10,
         });
-        // Overdue follow-ups records
         const overdueFollowUps = await prisma_1.prisma.lead.findMany({
             where: {
                 userId,

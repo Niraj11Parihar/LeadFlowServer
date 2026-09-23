@@ -75,7 +75,11 @@ exports.createFollowUpSchema = zod_1.z.object({
 exports.completeFollowUpSchema = zod_1.z.object({
     params: zod_1.z.object({
         id: zod_1.z.string().uuid('Invalid lead ID format'),
-        followUpId: zod_1.z.string().uuid('Invalid follow-up ID format'),
+        followUpId: zod_1.z.union([
+            zod_1.z.string().uuid(),
+            zod_1.z.literal('latest'),
+            zod_1.z.literal('new'),
+        ]),
     }),
     body: zod_1.z.object({
         communicationMedium: zod_1.z.string().min(1, 'Communication medium is required').max(100).transform((s) => s.trim()),
@@ -88,7 +92,7 @@ exports.completeFollowUpSchema = zod_1.z.object({
 exports.rescheduleFollowUpSchema = zod_1.z.object({
     params: zod_1.z.object({
         id: zod_1.z.string().uuid('Invalid lead ID format'),
-        followUpId: zod_1.z.string().uuid('Invalid follow-up ID format'),
+        followUpId: zod_1.z.string().min(1, 'Invalid follow-up ID format'),
     }),
     body: zod_1.z.object({
         scheduledAt: zod_1.z.string().min(1, 'New scheduled date & time is required'),

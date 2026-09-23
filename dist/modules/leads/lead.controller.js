@@ -39,7 +39,6 @@ class LeadController {
             data: result,
         });
     };
-    // Follow-ups controllers
     static getFollowUps = async (req, res) => {
         const result = await lead_service_1.LeadService.getFollowUps(req.user.userId, req.params.id, req.query);
         res.status(200).json({
@@ -69,7 +68,6 @@ class LeadController {
             data: followUp,
         });
     };
-    // Activities controller
     static getActivities = async (req, res) => {
         const result = await lead_service_1.LeadService.getActivities(req.user.userId, req.params.id, req.query);
         res.status(200).json({

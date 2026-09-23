@@ -14,11 +14,9 @@ class LeadService {
         const where = {
             userId,
         };
-        // Stage filter
         if (stage) {
             where.stage = stage;
         }
-        // Search filter (name, email, phone, company)
         if (search && search.trim() !== '') {
             const term = search.trim();
             where.OR = [
@@ -28,7 +26,6 @@ class LeadService {
                 { company: { contains: term, mode: 'insensitive' } },
             ];
         }
-        // Follow-up filter (today, overdue, upcoming)
         if (followUp) {
             const now = new Date();
             const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
@@ -53,7 +50,6 @@ class LeadService {
                 };
             }
         }
-        // Sort mapping
         const validSortFields = ['createdAt', 'name', 'company', 'stage', 'nextFollowUpAt', 'lastActivityAt', 'followUpAt'];
         const actualSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
         const orderBy = {
@@ -129,7 +125,6 @@ class LeadService {
                     userId,
                 },
             });
-            // Log lead_created activity
             await tx.leadActivity.create({
                 data: {
                     leadId: lead.id,
@@ -139,7 +134,6 @@ class LeadService {
                     createdAt: now,
                 },
             });
-            // If followUpAt is specified, automatically create Follow-Up #1 in SCHEDULED state
             if (scheduledDate) {
                 await tx.followUp.create({
                     data: {
@@ -250,11 +244,13 @@ class LeadService {
         });
         return { message: 'Lead deleted successfully' };
     }
-    // Follow-ups API
     static async getFollowUps(userId, leadId, query) {
         await this.getLeadById(userId, leadId);
-        const { page = 1, limit = 10, status } = query;
-        const skip = (page - 1) * limit;
+        const pageNum = Math.max(1, parseInt(String(query?.page || 1), 10));
+        const limitNum = Math.min(100, Math.max(1, parseInt(String(query?.limit || 10), 10)));
+        const { status } = query || {};
+        const skip = (pageNum - 1) * limitNum;
+        const take = limitNum;
         const where = {
             leadId,
         };
@@ -265,21 +261,21 @@ class LeadService {
             prisma_1.prisma.followUp.findMany({
                 where,
                 skip,
-                take: limit,
+                take,
                 orderBy: [{ sequenceNumber: 'desc' }, { createdAt: 'desc' }],
             }),
             prisma_1.prisma.followUp.count({ where }),
         ]);
-        const totalPages = Math.ceil(totalItems / limit) || 1;
+        const totalPages = Math.ceil(totalItems / limitNum) || 1;
         return {
             data: followUps,
             pagination: {
-                page,
-                limit,
+                page: pageNum,
+                limit: limitNum,
                 totalItems,
                 totalPages,
-                hasNextPage: page < totalPages,
-                hasPreviousPage: page > 1,
+                hasNextPage: pageNum < totalPages,
+                hasPreviousPage: pageNum > 1,
             },
         };
     }
@@ -288,7 +284,6 @@ class LeadService {
         const scheduledDate = new Date(data.scheduledAt);
         const now = new Date();
         return await prisma_1.prisma.$transaction(async (tx) => {
-            // Find highest sequence number for this lead
             const maxSeq = await tx.followUp.aggregate({
                 where: { leadId },
                 _max: { sequenceNumber: true },
@@ -305,7 +300,6 @@ class LeadService {
                     createdAt: now,
                 },
             });
-            // Update lead
             await tx.lead.update({
                 where: { id: leadId },
                 data: {
@@ -314,7 +308,6 @@ class LeadService {
                     lastActivityAt: now,
                 },
             });
-            // Log activity
             await tx.leadActivity.create({
                 data: {
                     leadId,
@@ -334,19 +327,48 @@ class LeadService {
     }
     static async completeFollowUp(userId, leadId, followUpId, data) {
         const lead = await this.getLeadById(userId, leadId);
-        const followUp = await prisma_1.prisma.followUp.findFirst({
-            where: { id: followUpId, leadId },
-        });
-        if (!followUp) {
-            throw new error_middleware_1.AppError('Follow-up record not found', 404);
+        let followUp = null;
+        if (followUpId === 'latest' || followUpId === 'new') {
+            followUp = await prisma_1.prisma.followUp.findFirst({
+                where: { leadId, status: client_1.FollowUpStatus.SCHEDULED },
+                orderBy: [{ sequenceNumber: 'desc' }, { scheduledAt: 'desc' }],
+            });
+            if (!followUp) {
+                followUp = await prisma_1.prisma.followUp.findFirst({
+                    where: { leadId },
+                    orderBy: { sequenceNumber: 'desc' },
+                });
+            }
+        }
+        else {
+            followUp = await prisma_1.prisma.followUp.findFirst({
+                where: { id: followUpId, leadId },
+            });
         }
         const now = new Date();
         const normalizedMedium = data.communicationMedium.toLowerCase().trim();
         const nextScheduledDate = data.nextFollowUpAt ? new Date(data.nextFollowUpAt) : null;
         return await prisma_1.prisma.$transaction(async (tx) => {
-            // 1. Update existing follow-up
+            let targetFollowUp = followUp;
+            if (!targetFollowUp) {
+                const maxSeq = await tx.followUp.aggregate({
+                    where: { leadId },
+                    _max: { sequenceNumber: true },
+                });
+                const sequenceNumber = (maxSeq._max.sequenceNumber || 0) + 1;
+                targetFollowUp = await tx.followUp.create({
+                    data: {
+                        leadId,
+                        userId,
+                        sequenceNumber,
+                        status: client_1.FollowUpStatus.SCHEDULED,
+                        scheduledAt: now,
+                        createdAt: now,
+                    },
+                });
+            }
             const completedFollowUp = await tx.followUp.update({
-                where: { id: followUpId },
+                where: { id: targetFollowUp.id },
                 data: {
                     status: client_1.FollowUpStatus.COMPLETED,
                     completedAt: now,
@@ -357,23 +379,22 @@ class LeadService {
                     nextFollowUpAt: nextScheduledDate,
                 },
             });
-            // 2. Log followup_completed activity
             await tx.leadActivity.create({
                 data: {
                     leadId,
                     userId,
                     type: client_1.ActivityType.FOLLOWUP_COMPLETED,
-                    description: `Follow-up #${followUp.sequenceNumber} completed (${data.communicationMedium})`,
+                    description: `Follow-up #${targetFollowUp.sequenceNumber} completed (${data.communicationMedium})`,
                     metadata: {
-                        followUpId,
-                        sequenceNumber: followUp.sequenceNumber,
+                        followUpId: targetFollowUp.id,
+                        sequenceNumber: targetFollowUp.sequenceNumber,
                         communicationMedium: data.communicationMedium,
+                        discussionNote: data.discussionNote,
                         outcome: data.outcome || null,
                     },
                     createdAt: now,
                 },
             });
-            // 3. Stage update if requested
             if (data.stage && data.stage !== lead.stage) {
                 await tx.lead.update({
                     where: { id: leadId },
@@ -393,13 +414,12 @@ class LeadService {
                     },
                 });
             }
-            // 4. Create next scheduled follow-up if requested
             if (nextScheduledDate) {
                 const maxSeq = await tx.followUp.aggregate({
                     where: { leadId },
                     _max: { sequenceNumber: true },
                 });
-                const nextSequence = (maxSeq._max.sequenceNumber || followUp.sequenceNumber || 0) + 1;
+                const nextSequence = (maxSeq._max.sequenceNumber || targetFollowUp.sequenceNumber || 0) + 1;
                 const nextFollowUp = await tx.followUp.create({
                     data: {
                         leadId,
@@ -410,7 +430,6 @@ class LeadService {
                         createdAt: now,
                     },
                 });
-                // Update lead state
                 await tx.lead.update({
                     where: { id: leadId },
                     data: {
@@ -436,7 +455,6 @@ class LeadService {
                 });
             }
             else {
-                // Clear active followUpAt on lead if no next follow-up is set
                 await tx.lead.update({
                     where: { id: leadId },
                     data: {
@@ -497,30 +515,60 @@ class LeadService {
             return updatedFollowUp;
         });
     }
-    // Activities API
     static async getActivities(userId, leadId, query) {
         await this.getLeadById(userId, leadId);
-        const { page = 1, limit = 20 } = query;
-        const skip = (page - 1) * limit;
+        const pageNum = Math.max(1, parseInt(String(query?.page || 1), 10));
+        const limitNum = Math.min(100, Math.max(1, parseInt(String(query?.limit || 20), 10)));
+        const skip = (pageNum - 1) * limitNum;
+        const take = limitNum;
         const [activities, totalItems] = await prisma_1.prisma.$transaction([
             prisma_1.prisma.leadActivity.findMany({
                 where: { leadId },
                 skip,
-                take: limit,
+                take,
                 orderBy: { createdAt: 'desc' },
             }),
             prisma_1.prisma.leadActivity.count({ where: { leadId } }),
         ]);
-        const totalPages = Math.ceil(totalItems / limit) || 1;
+        const followUpIds = activities
+            .filter((a) => a.type === client_1.ActivityType.FOLLOWUP_COMPLETED && a.metadata?.followUpId)
+            .map((a) => a.metadata.followUpId);
+        let followUpMap = {};
+        if (followUpIds.length > 0) {
+            const followUps = await prisma_1.prisma.followUp.findMany({
+                where: { id: { in: followUpIds } },
+            });
+            followUpMap = followUps.reduce((acc, f) => {
+                acc[f.id] = f;
+                return acc;
+            }, {});
+        }
+        const enrichedActivities = activities.map((act) => {
+            const meta = act.metadata || {};
+            if (act.type === client_1.ActivityType.FOLLOWUP_COMPLETED) {
+                const f = meta.followUpId ? followUpMap[meta.followUpId] : null;
+                return {
+                    ...act,
+                    metadata: {
+                        ...meta,
+                        discussionNote: meta.discussionNote || f?.discussionNote || null,
+                        communicationMedium: meta.communicationMedium || f?.communicationMedium || null,
+                        outcome: meta.outcome || f?.outcome || null,
+                    },
+                };
+            }
+            return act;
+        });
+        const totalPages = Math.ceil(totalItems / limitNum) || 1;
         return {
-            data: activities,
+            data: enrichedActivities,
             pagination: {
-                page,
-                limit,
+                page: pageNum,
+                limit: limitNum,
                 totalItems,
                 totalPages,
-                hasNextPage: page < totalPages,
-                hasPreviousPage: page > 1,
+                hasNextPage: pageNum < totalPages,
+                hasPreviousPage: pageNum > 1,
             },
         };
     }
