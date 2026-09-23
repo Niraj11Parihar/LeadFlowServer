@@ -8,12 +8,76 @@ class DashboardService {
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        const total = await prisma_1.prisma.lead.count({ where: { userId } });
-        const stageCounts = await prisma_1.prisma.lead.groupBy({
-            by: ['stage'],
-            where: { userId },
-            _count: { stage: true },
-        });
+        const [total, stageCounts, todayCount, overdueCount, todayFollowUps, overdueFollowUps,] = await Promise.all([
+            prisma_1.prisma.lead.count({ where: { userId } }),
+            prisma_1.prisma.lead.groupBy({
+                by: ['stage'],
+                where: { userId },
+                _count: { stage: true },
+            }),
+            prisma_1.prisma.lead.count({
+                where: {
+                    userId,
+                    followUpAt: {
+                        gte: startOfToday,
+                        lte: endOfToday,
+                    },
+                },
+            }),
+            prisma_1.prisma.lead.count({
+                where: {
+                    userId,
+                    followUpAt: {
+                        lt: startOfToday,
+                    },
+                    stage: {
+                        notIn: [client_1.LeadStage.WON, client_1.LeadStage.LOST],
+                    },
+                },
+            }),
+            prisma_1.prisma.lead.findMany({
+                where: {
+                    userId,
+                    followUpAt: {
+                        gte: startOfToday,
+                        lte: endOfToday,
+                    },
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    company: true,
+                    stage: true,
+                    followUpAt: true,
+                    phone: true,
+                    email: true,
+                },
+                orderBy: { followUpAt: 'asc' },
+                take: 10,
+            }),
+            prisma_1.prisma.lead.findMany({
+                where: {
+                    userId,
+                    followUpAt: {
+                        lt: startOfToday,
+                    },
+                    stage: {
+                        notIn: [client_1.LeadStage.WON, client_1.LeadStage.LOST],
+                    },
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    company: true,
+                    stage: true,
+                    followUpAt: true,
+                    phone: true,
+                    email: true,
+                },
+                orderBy: { followUpAt: 'asc' },
+                take: 10,
+            }),
+        ]);
         const stages = {
             new: 0,
             contacted: 0,
@@ -32,68 +96,6 @@ class DashboardService {
                 stages.won = sc._count.stage;
             if (sc.stage === client_1.LeadStage.LOST)
                 stages.lost = sc._count.stage;
-        });
-        const todayCount = await prisma_1.prisma.lead.count({
-            where: {
-                userId,
-                followUpAt: {
-                    gte: startOfToday,
-                    lte: endOfToday,
-                },
-            },
-        });
-        const overdueCount = await prisma_1.prisma.lead.count({
-            where: {
-                userId,
-                followUpAt: {
-                    lt: startOfToday,
-                },
-                stage: {
-                    notIn: [client_1.LeadStage.WON, client_1.LeadStage.LOST],
-                },
-            },
-        });
-        const todayFollowUps = await prisma_1.prisma.lead.findMany({
-            where: {
-                userId,
-                followUpAt: {
-                    gte: startOfToday,
-                    lte: endOfToday,
-                },
-            },
-            select: {
-                id: true,
-                name: true,
-                company: true,
-                stage: true,
-                followUpAt: true,
-                phone: true,
-                email: true,
-            },
-            orderBy: { followUpAt: 'asc' },
-            take: 10,
-        });
-        const overdueFollowUps = await prisma_1.prisma.lead.findMany({
-            where: {
-                userId,
-                followUpAt: {
-                    lt: startOfToday,
-                },
-                stage: {
-                    notIn: [client_1.LeadStage.WON, client_1.LeadStage.LOST],
-                },
-            },
-            select: {
-                id: true,
-                name: true,
-                company: true,
-                stage: true,
-                followUpAt: true,
-                phone: true,
-                email: true,
-            },
-            orderBy: { followUpAt: 'asc' },
-            take: 10,
         });
         return {
             total,

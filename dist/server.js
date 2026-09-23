@@ -11,9 +11,25 @@ async function bootstrap() {
     try {
         await prisma_1.prisma.$connect();
         console.log('Successfully connected to PostgreSQL database');
-        app_1.default.listen(PORT, () => {
+        const server = app_1.default.listen(PORT, () => {
             console.log(`LeadFlow API Server running at http://localhost:${PORT}`);
         });
+        const handleGracefulShutdown = async (signal) => {
+            console.log(`Received ${signal}. Shutting down server gracefully...`);
+            server.close(async () => {
+                try {
+                    await prisma_1.prisma.$disconnect();
+                    console.log('Database connection closed cleanly.');
+                    process.exit(0);
+                }
+                catch (err) {
+                    console.error('Error disconnecting database during shutdown:', err);
+                    process.exit(1);
+                }
+            });
+        };
+        process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+        process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
     }
     catch (error) {
         console.error('Failed to start server:', error);
@@ -21,4 +37,10 @@ async function bootstrap() {
         process.exit(1);
     }
 }
+process.on('unhandledRejection', (reason) => {
+    console.error('[Unhandled Rejection]:', reason);
+});
+process.on('uncaughtException', (error) => {
+    console.error('[Uncaught Exception]:', error);
+});
 bootstrap();
