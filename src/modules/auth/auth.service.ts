@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma';
 import { signToken } from '../../utils/jwt';
 import { AppError } from '../../middleware/error.middleware';
-import { RegisterInput, LoginInput } from './auth.schema';
+import { RegisterInput, LoginInput, UpdateProfileInput, ChangePasswordInput } from './auth.schema';
 
 export class AuthService {
   static async register(data: RegisterInput) {
@@ -14,7 +14,7 @@ export class AuthService {
       throw new AppError('Email address is already registered', 409);
     }
 
-    const hashedPassword = await bcrypt.hash(data.password, 10);
+    const hashedPassword = await bcrypt.hash(data.password, 12);
 
     const user = await prisma.user.create({
       data: {
@@ -79,5 +79,48 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  static async updateProfile(userId: string, data: UpdateProfileInput) {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+      },
+    });
+
+    return updatedUser;
+  }
+
+  static async changePassword(userId: string, data: ChangePasswordInput) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    const isCurrentValid = await bcrypt.compare(data.currentPassword, user.password);
+    if (!isCurrentValid) {
+      throw new AppError('Current password is incorrect', 400);
+    }
+
+    const newHashedPassword = await bcrypt.hash(data.newPassword, 12);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: newHashedPassword,
+      },
+    });
+
+    return { success: true, message: 'Password updated successfully' };
   }
 }
